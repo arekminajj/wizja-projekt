@@ -5,13 +5,13 @@ import cv2
 from method.method import Method
 from method.method_payload import MethodPayload
 from scripts.file_coords_parser import parse_file_coords, parse_etiquette
-from scripts.loaders import BDGSDatasetLoader, NUSDatasetLoader, NUSIIDatasetLoader, JochenTrieschDatasetLoader, SebasteinMarcelDatasetLoader
+from scripts.loaders import  NUSIIDatasetLoader
 from time import sleep
 from scripts.gestures import Gesture10
 
 
 def image_processing_visual_test():
-    files = NUSDatasetLoader.get_learning_files(base_path='/home/arekminajj/bdgs/bdgs_third_party_datasets/NUS-Hand-Posture-Dataset')
+    files = NUSIIDatasetLoader.get_learning_files(base_path='/home/arekminajj/studia/wizja/NUS-Hand-Posture-Dataset-II/Hand Postures')
 
     for image_file in files:
         image = cv2.imread(image_file[0])
@@ -29,7 +29,7 @@ def image_processing_visual_test():
 
 
 def classification_visual_test():
-    files = NUSDatasetLoader.get_learning_files(base_path='/home/arekminajj/bdgs/bdgs_third_party_datasets/NUS-Hand-Posture-Dataset')
+    files = NUSIIDatasetLoader.get_learning_files(base_path='/home/arekminajj/studia/wizja/NUS-Hand-Posture-Dataset-II/Hand Postures')
     for image_file in files:
         image = cv2.imread(image_file[0])
         payload = MethodPayload(image=image)
@@ -42,6 +42,7 @@ def classification_visual_test():
                                             , custom_model_path=".")
 
         cv2.imshow(f"Predicted gesture: {result} ({certainty}%", image)
+        print(f"Predictet gesture: {result}, correct gesture: {image_file[1]}")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
