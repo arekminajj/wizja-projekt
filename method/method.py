@@ -35,8 +35,11 @@ class Method():
         closed_mask = cv2.morphologyEx(eroded_mask, cv2.MORPH_CLOSE, sq_kernel)
 
         # Aproksymacja wielokątna
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        approx_mask = np.zeros_like(mask)
+        contours, _ = cv2.findContours(closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return closed_mask
+        
+        approx_mask = np.zeros_like(closed_mask)
         for contour in contours:
             epsilon = 0.01 * cv2.arcLength(contour, True)
             approx_contour = cv2.approxPolyDP(contour, epsilon, True)
@@ -44,7 +47,7 @@ class Method():
 
         # apply mask
         gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        result = cv2.bitwise_and(gray_img, gray_img, mask=mask)
+        result = cv2.bitwise_and(gray_img, gray_img, mask=approx_mask)
 
         return result
 
