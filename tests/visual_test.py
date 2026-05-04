@@ -9,9 +9,10 @@ from scripts.loaders import  NUSIIDatasetLoader
 from time import sleep
 from scripts.gestures import Gesture10
 
+path = os.path.relpath("../NUS-Hand-Posture-Dataset-II/Hand Postures")
 
 def image_processing_visual_test():
-    files = NUSIIDatasetLoader.get_learning_files(base_path='/home/arekminajj/studia/wizja/NUS-Hand-Posture-Dataset-II/Hand Postures')
+    files = NUSIIDatasetLoader.get_learning_files(base_path=path)
 
     for image_file in files:
         image = cv2.imread(image_file[0])
@@ -48,5 +49,5 @@ def classification_visual_test():
 
 
 if __name__ == "__main__":
-    #image_processing_visual_test()
-    classification_visual_test()
+    image_processing_visual_test()
+    #classification_visual_test()

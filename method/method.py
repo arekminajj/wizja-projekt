@@ -13,57 +13,40 @@ from method.method_payload import MethodPayload
 from scripts.gestures import Gesture10
 from definitions import ROOT_DIR
 
-def _skin_segmentation(image: np.ndarray) -> np.ndarray:
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-    lower_skin = np.array([0, 20, 70], dtype=np.uint8)
-    upper_skin = np.array([20, 255, 255], dtype=np.uint8)
-
-    skin_mask = cv2.inRange(hsv, lower_skin, upper_skin)
-    return skin_mask
-
-
-def _morphological_processing(mask: np.ndarray) -> np.ndarray:
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
-    eroded = cv2.erode(mask, horizontal_kernel, iterations=1)
-
-    square_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
-    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, square_kernel)
-
-    return closed
-
-
-def _polygonal_approximation(mask: np.ndarray) -> np.ndarray:
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    approx_mask = np.zeros_like(mask)
-
-    for contour in contours:
-        epsilon = 0.01 * cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, epsilon, True)
-        cv2.drawContours(approx_mask, [approx], -1, (255,), thickness=cv2.FILLED)
-
-    return approx_mask
-
-
-def _apply_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    result = cv2.bitwise_and(gray, gray, mask=mask)
-    return result
-
 
 class Method():
     @staticmethod
     def process_image(payload: MethodPayload) -> np.ndarray:
-        image = payload.image
+        img = payload.image
 
-        image = cv2.resize(image, (100, 100))
+        img = cv2.resize(img, (100, 100))
 
-        skin_mask = _skin_segmentation(image)
-        skin_mask = _morphological_processing(skin_mask)
-        skin_mask = _polygonal_approximation(skin_mask)
-        masked_image = _apply_mask(image, skin_mask)
+        # Segmentacja skóry
+        hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        skin_lower = np.array([0, 20, 70], dtype=np.uint8)
+        skin_upper = np.array([20, 255, 255], dtype=np.uint8)
+        mask = cv2.inRange(hsv_img, skin_lower, skin_upper)
 
-        return masked_image
+        # Operacje morfologiczne
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
+        eroded_mask = cv2.erode(mask, h_kernel, iterations=1)
+
+        sq_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
+        closed_mask = cv2.morphologyEx(eroded_mask, cv2.MORPH_CLOSE, sq_kernel)
+
+        # Aproksymacja wielokątna
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        approx_mask = np.zeros_like(mask)
+        for contour in contours:
+            epsilon = 0.01 * cv2.arcLength(contour, True)
+            approx_contour = cv2.approxPolyDP(contour, epsilon, True)
+            cv2.drawContours(approx_mask, [approx_contour], -1, (255,), thickness=cv2.FILLED)
+
+        # apply mask
+        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        result = cv2.bitwise_and(gray_img, gray_img, mask=mask)
+
+        return result
 
 
     def learn(learning_data: list, target_model_path: str, custom_options: dict = None) -> float:
@@ -105,7 +88,7 @@ class Method():
 
         processed_image = Method.process_image(payload=payload)
         processed_image = processed_image.flatten()
-        #processed_image = processed_image.reshape(1, -1)
+        processed_image = processed_image.reshape(1, -1)
 
         proba = model.predict_proba(processed_image)[0]
         predicted_label = np.argmax(proba)
