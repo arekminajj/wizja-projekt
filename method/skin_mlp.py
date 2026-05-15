@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import cv2
@@ -5,9 +6,24 @@ import numpy as np
 from sklearn.neural_network import MLPClassifier
 
 
+def load_manual_masks(image_paths: list, masks_dir: str) -> tuple:
+    images, masks = [], []
+    for path in image_paths:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        mask_path = os.path.join(masks_dir, stem + "_mask.png")
+        if not os.path.exists(mask_path):
+            continue
+        img = cv2.imread(path)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        if img is None or mask is None:
+            continue
+        images.append(cv2.resize(img, (400, 400)))
+        masks.append(cv2.resize(mask, (400, 400)))
+    return images, masks
+
+
 class SkinMLP:
     def __init__(self):
-        # Architecture from paper: RGB(3) -> 5 -> 10 -> 1 (skin/non-skin)
         self.mlp = MLPClassifier(
             hidden_layer_sizes=(5, 10),
             activation='logistic',

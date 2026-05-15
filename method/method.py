@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.svm import SVC
 
 from method.method_payload import MethodPayload
-from method.skin_mlp import SkinMLP
+from method.skin_mlp import SkinMLP, load_manual_masks
 from scripts.gestures import Gesture10
 from definitions import ROOT_DIR
 
@@ -56,8 +56,23 @@ class Method():
             image = cv2.imread(data.image_path)
             train_images.append(cv2.resize(image, (400, 400)))
 
+        masks_dir = (custom_options or {}).get("skin_masks_dir")
+        if masks_dir:
+            image_paths = [d.image_path for d in learning_data]
+            manual_images, manual_masks = load_manual_masks(image_paths, masks_dir)
+            if manual_images:
+                print(f"Using {len(manual_images)} manually annotated masks for SkinMLP training")
+                train_imgs_mlp, train_masks_mlp = manual_images, manual_masks
+            else:
+                print("No manual masks found, bootstrapping SkinMLP from HSV")
+                train_imgs_mlp = train_images
+                train_masks_mlp = [_hsv_skin_mask(img) for img in train_images]
+        else:
+            train_imgs_mlp = train_images
+            train_masks_mlp = [_hsv_skin_mask(img) for img in train_images]
+
         skin_mlp = SkinMLP()
-        skin_mlp.train(train_images, [_hsv_skin_mask(img) for img in train_images])
+        skin_mlp.train(train_imgs_mlp, train_masks_mlp)
         skin_mlp.save(os.path.join(target_model_path, 'skin_mlp.pkl'))
 
         X, y = [], []
