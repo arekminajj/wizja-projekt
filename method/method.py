@@ -21,42 +21,35 @@ def _hsv_skin_mask(img: np.ndarray) -> np.ndarray:
 
 class Method():
     @staticmethod
-    def process_image(payload: MethodPayload, skin_mlp: Optional[SkinMLP] = None) -> np.ndarray:
-        img = payload.image
-        img = cv2.resize(img, (400, 400))
-
-        if skin_mlp is not None:
-            mask = skin_mlp.segment(img)
-        else:
-            mask = _hsv_skin_mask(img)
-
+    def _apply_pipeline(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
         h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
-        eroded_mask = cv2.erode(mask, h_kernel, iterations=1)
+        eroded = cv2.erode(mask, h_kernel, iterations=1)
 
         sq_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
-        closed_mask = cv2.morphologyEx(eroded_mask, cv2.MORPH_CLOSE, sq_kernel)
+        closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, sq_kernel)
 
-        contours, _ = cv2.findContours(closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return closed_mask
+            return closed
 
-        approx_mask = np.zeros_like(closed_mask)
-        for contour in contours:
-            epsilon = 0.01 * cv2.arcLength(contour, True)
-            approx_contour = cv2.approxPolyDP(contour, epsilon, True)
-            cv2.drawContours(approx_mask, [approx_contour], -1, (255,), thickness=cv2.FILLED)
+        approx_mask = np.zeros_like(closed)
+        largest = max(contours, key=cv2.contourArea)
+        epsilon = 0.01 * cv2.arcLength(largest, True)
+        approx = cv2.approxPolyDP(largest, epsilon, True)
+        cv2.drawContours(approx_mask, [approx], -1, (255,), thickness=cv2.FILLED)
 
-        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        return cv2.bitwise_and(gray_img, gray_img, mask=approx_mask)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        return cv2.bitwise_and(gray, gray, mask=approx_mask)
+
+    @staticmethod
+    def process_image(payload: MethodPayload, skin_mlp: Optional[SkinMLP] = None) -> np.ndarray:
+        img = cv2.resize(payload.image, (400, 400))
+        mask = skin_mlp.segment(img) if skin_mlp is not None else _hsv_skin_mask(img)
+        return Method._apply_pipeline(img, mask)
 
 
     def learn(learning_data: list, target_model_path: str, custom_options: dict = None) -> float:
-        train_images = []
-        for data in learning_data:
-            image = cv2.imread(data.image_path)
-            train_images.append(cv2.resize(image, (400, 400)))
-
-        masks_dir = (custom_options or {}).get("skin_masks_dir")
+        masks_dir = (custom_options or {}).get("skin_masks_dir", os.path.join(ROOT_DIR, "skin_masks"))
         if masks_dir:
             image_paths = [d.image_path for d in learning_data]
             manual_images, manual_masks = load_manual_masks(image_paths, masks_dir)
@@ -65,20 +58,30 @@ class Method():
                 train_imgs_mlp, train_masks_mlp = manual_images, manual_masks
             else:
                 print("No manual masks found, bootstrapping SkinMLP from HSV")
-                train_imgs_mlp = train_images
-                train_masks_mlp = [_hsv_skin_mask(img) for img in train_images]
+                train_imgs_mlp, train_masks_mlp = [], []
+                for data in learning_data:
+                    img = cv2.resize(cv2.imread(data.image_path), (400, 400))
+                    train_imgs_mlp.append(img)
+                    train_masks_mlp.append(_hsv_skin_mask(img))
         else:
-            train_imgs_mlp = train_images
-            train_masks_mlp = [_hsv_skin_mask(img) for img in train_images]
+            train_imgs_mlp, train_masks_mlp = [], []
+            for data in learning_data:
+                img = cv2.resize(cv2.imread(data.image_path), (400, 400))
+                train_imgs_mlp.append(img)
+                train_masks_mlp.append(_hsv_skin_mask(img))
 
         skin_mlp = SkinMLP()
         skin_mlp.train(train_imgs_mlp, train_masks_mlp)
+        del train_imgs_mlp, train_masks_mlp
         skin_mlp.save(os.path.join(target_model_path, 'skin_mlp.pkl'))
 
+        print(f"Processing {len(learning_data)} images...")
         X, y = [], []
-        for data, image in zip(learning_data, train_images):
-            processed = Method.process_image(MethodPayload(image), skin_mlp=skin_mlp)
-            X.append(processed.flatten())
+        for data in learning_data:
+            image = cv2.resize(cv2.imread(data.image_path), (400, 400))
+            mask = skin_mlp.segment(image)
+            processed = Method._apply_pipeline(image, mask)
+            X.append(cv2.resize(processed, (64, 64)).flatten())
             y.append(data.label.value - 1)
 
         svm = SVC(probability=True, kernel='linear')
@@ -102,7 +105,7 @@ class Method():
             model = pickle.load(f)
 
         processed = Method.process_image(payload=payload, skin_mlp=skin_mlp)
-        processed = processed.flatten().reshape(1, -1)
+        processed = cv2.resize(processed, (64, 64)).flatten().reshape(1, -1)
 
         proba = model.predict_proba(processed)[0]
         predicted_label = np.argmax(proba)

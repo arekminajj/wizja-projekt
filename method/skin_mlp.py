@@ -52,11 +52,25 @@ class SkinMLP:
             raise ValueError("No valid training samples for SkinMLP")
         self.mlp.fit(np.vstack(X), np.concatenate(y))
 
+    def _forward(self, pixels: np.ndarray) -> np.ndarray:
+        a = pixels
+        for coef, intercept in zip(self.mlp.coefs_[:-1], self.mlp.intercepts_[:-1]):
+            a = 1.0 / (1.0 + np.exp(-(a @ coef + intercept)))
+        a = 1.0 / (1.0 + np.exp(-(a @ self.mlp.coefs_[-1] + self.mlp.intercepts_[-1])))
+        return a.ravel() >= 0.5
+
     def segment(self, image: np.ndarray) -> np.ndarray:
         h, w = image.shape[:2]
         pixels = image.reshape(-1, 3).astype(np.float32) / 255.0
-        pred = self.mlp.predict(pixels)
-        return (pred.reshape(h, w) * 255).astype(np.uint8)
+        return self._forward(pixels).reshape(h, w).astype(np.uint8) * 255
+
+    def segment_all(self, images: list) -> list:
+        """Segment a list of same-size images in one batched forward pass."""
+        h, w = images[0].shape[:2]
+        n = len(images)
+        pixels = np.stack(images).reshape(-1, 3).astype(np.float32) / 255.0
+        preds = self._forward(pixels).reshape(n, h, w).astype(np.uint8) * 255
+        return [preds[i] for i in range(n)]
 
     def save(self, path: str):
         with open(path, 'wb') as f:
