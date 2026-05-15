@@ -1,99 +1,95 @@
 import os
 import pickle
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-from numpy import ndarray
 from sklearn.metrics import accuracy_score
 from sklearn.svm import SVC
 
 from method.method_payload import MethodPayload
+from method.skin_mlp import SkinMLP
 from scripts.gestures import Gesture10
 from definitions import ROOT_DIR
 
 
+def _hsv_skin_mask(img: np.ndarray) -> np.ndarray:
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    return cv2.inRange(hsv, np.array([0, 20, 70], dtype=np.uint8), np.array([20, 255, 255], dtype=np.uint8))
+
+
 class Method():
     @staticmethod
-    def process_image(payload: MethodPayload) -> np.ndarray:
+    def process_image(payload: MethodPayload, skin_mlp: Optional[SkinMLP] = None) -> np.ndarray:
         img = payload.image
+        img = cv2.resize(img, (400, 400))
 
-        img = cv2.resize(img, (100, 100))
+        if skin_mlp is not None:
+            mask = skin_mlp.segment(img)
+        else:
+            mask = _hsv_skin_mask(img)
 
-        # Segmentacja skóry
-        hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        skin_lower = np.array([0, 20, 70], dtype=np.uint8)
-        skin_upper = np.array([20, 255, 255], dtype=np.uint8)
-        mask = cv2.inRange(hsv_img, skin_lower, skin_upper)
-
-        # Operacje morfologiczne
         h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
         eroded_mask = cv2.erode(mask, h_kernel, iterations=1)
 
         sq_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
         closed_mask = cv2.morphologyEx(eroded_mask, cv2.MORPH_CLOSE, sq_kernel)
 
-        # Aproksymacja wielokątna
         contours, _ = cv2.findContours(closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return closed_mask
-        
+
         approx_mask = np.zeros_like(closed_mask)
         for contour in contours:
             epsilon = 0.01 * cv2.arcLength(contour, True)
             approx_contour = cv2.approxPolyDP(contour, epsilon, True)
             cv2.drawContours(approx_mask, [approx_contour], -1, (255,), thickness=cv2.FILLED)
 
-        # apply mask
         gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        result = cv2.bitwise_and(gray_img, gray_img, mask=approx_mask)
-
-        return result
+        return cv2.bitwise_and(gray_img, gray_img, mask=approx_mask)
 
 
     def learn(learning_data: list, target_model_path: str, custom_options: dict = None) -> float:
-
-        X, y = [], []
-
+        train_images = []
         for data in learning_data:
             image = cv2.imread(data.image_path)
-            processed_image = Method.process_image(MethodPayload(image))
-            processed_image = processed_image.flatten()
-            #processed_image = processed_image.reshape(1, -1)
+            train_images.append(cv2.resize(image, (400, 400)))
 
-            X.append(processed_image)
+        skin_mlp = SkinMLP()
+        skin_mlp.train(train_images, [_hsv_skin_mask(img) for img in train_images])
+        skin_mlp.save(os.path.join(target_model_path, 'skin_mlp.pkl'))
+
+        X, y = [], []
+        for data, image in zip(learning_data, train_images):
+            processed = Method.process_image(MethodPayload(image), skin_mlp=skin_mlp)
+            X.append(processed.flatten())
             y.append(data.label.value - 1)
 
         svm = SVC(probability=True, kernel='linear')
         svm.fit(X, y)
 
-        model_path = os.path.join(target_model_path, 'method_svm.pkl')
-        with open(model_path, 'wb') as f:
+        with open(os.path.join(target_model_path, 'method_svm.pkl'), 'wb') as f:
             pickle.dump(svm, f)
 
-        y_pred = svm.predict(X)
-        accuracy = accuracy_score(y, y_pred)
-
-        return accuracy
+        return accuracy_score(y, svm.predict(X))
 
     @staticmethod
     def classify(payload: MethodPayload, custom_model_path=None,
                  custom_options: dict = None) -> Tuple[Enum, int]:
 
-        model_filename = "method_svm.pkl"
-        model_path = os.path.join(custom_model_path, model_filename) if custom_model_path is not None else os.path.join(
-            ROOT_DIR, "sgrf_trained_models",
-            model_filename)
+        model_dir = custom_model_path if custom_model_path is not None else os.path.join(ROOT_DIR, "sgrf_trained_models")
 
-        with open(model_path, 'rb') as f:
+        skin_mlp_path = os.path.join(model_dir, 'skin_mlp.pkl')
+        skin_mlp = SkinMLP.load(skin_mlp_path) if os.path.exists(skin_mlp_path) else None
+
+        with open(os.path.join(model_dir, 'method_svm.pkl'), 'rb') as f:
             model = pickle.load(f)
 
-        processed_image = Method.process_image(payload=payload)
-        processed_image = processed_image.flatten()
-        processed_image = processed_image.reshape(1, -1)
+        processed = Method.process_image(payload=payload, skin_mlp=skin_mlp)
+        processed = processed.flatten().reshape(1, -1)
 
-        proba = model.predict_proba(processed_image)[0]
+        proba = model.predict_proba(processed)[0]
         predicted_label = np.argmax(proba)
         certainty = int(np.max(proba) * 100)
 
