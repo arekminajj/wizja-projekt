@@ -26,6 +26,19 @@ import numpy as np
 
 TARGET_SIZE = (400, 400)
 OVERLAY_ALPHA = 0.4
+
+
+def _resize_pad(img: np.ndarray) -> np.ndarray:
+    th, tw = TARGET_SIZE
+    h, w = img.shape[:2]
+    scale = min(tw / w, th / h)
+    new_w, new_h = int(round(w * scale)), int(round(h * scale))
+    resized = cv2.resize(img, (new_w, new_h))
+    canvas = np.zeros((th, tw) if img.ndim == 2 else (th, tw, img.shape[2]), dtype=img.dtype)
+    y0 = (th - new_h) // 2
+    x0 = (tw - new_w) // 2
+    canvas[y0:y0 + new_h, x0:x0 + new_w] = resized
+    return canvas
 DEFAULT_BRUSH = 15
 WINDOW = "Mask Creator"
 
@@ -254,7 +267,7 @@ def run(images_dir: str, output_dir: str):
             idx += 1
             continue
 
-        image = cv2.resize(raw, TARGET_SIZE)
+        image = _resize_pad(raw)
         state.mask = _load_mask(image_path, output_dir)
         state.dirty = False
         state.viewport.reset()

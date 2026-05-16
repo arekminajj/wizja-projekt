@@ -1,87 +1,92 @@
 import os
 import pickle
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Tuple
 
 import cv2
 import numpy as np
+from skimage.feature import hog
 from sklearn.metrics import accuracy_score
 from sklearn.svm import SVC
 
 from method.method_payload import MethodPayload
-from method.skin_mlp import SkinMLP, load_manual_masks
 from scripts.gestures import Gesture10
 from definitions import ROOT_DIR
 
+_IMG_SIZE = (64, 64)
 
-def _hsv_skin_mask(img: np.ndarray) -> np.ndarray:
+
+def _skin_mask(img: np.ndarray) -> np.ndarray:
+    """
+    HSV skin-colour mask using ranges from Shaik et al. (Table 1):
+    H 0–50° (0–25 OpenCV), S 0.23–0.68 (58–173), V 0.35–1.0 (89–255).
+    Second band covers the red wrap-around (335–360° → 168–180 OpenCV).
+    Shaik et al., "Comparative study of skin colour detection and segmentation
+    in HSV and YCbCr colour space", Procedia CS 57, 2015.
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    return cv2.inRange(hsv, np.array([0, 20, 70], dtype=np.uint8), np.array([20, 255, 255], dtype=np.uint8))
+    lo1, hi1 = np.array([0,   58,  89]), np.array([25,  173, 255])
+    lo2, hi2 = np.array([168, 58,  89]), np.array([180, 173, 255])
+    return cv2.bitwise_or(cv2.inRange(hsv, lo1, hi1), cv2.inRange(hsv, lo2, hi2))
 
 
-class Method():
+def _saliency_u8(img: np.ndarray) -> np.ndarray:
+    """Fine-grained static saliency map (Montabone & Soto 2010) as uint8."""
+    saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+    _, sal_map = saliency.computeSaliency(img)
+    return (sal_map * 255).astype(np.uint8)
+
+
+def _hog_image(img: np.ndarray) -> np.ndarray:
+    """HOG gradient-orientation energy image (Dalal & Triggs 2005)."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, hog_vis = hog(gray, orientations=9, pixels_per_cell=(8, 8),
+                     cells_per_block=(2, 2), visualize=True)
+    if hog_vis.max() > 0:
+        return (hog_vis / hog_vis.max() * 255).astype(np.uint8)
+    return np.zeros_like(gray, dtype=np.uint8)
+
+
+def extract_features(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Jafari & Basu, Sensors 2023, Section 3.
+
+    F1 = original grayscale
+    F2 = skin AND saliency        — saliency gated to skin regions
+    F3 = Canny OR HOG             — combined edge/gradient structure
+    F4 = (F2 AND F3) XOR skin     — hand shape refined by skin
+
+    All outputs are uint8 images at _IMG_SIZE.
+    """
+    img = cv2.resize(img, _IMG_SIZE)
+
+    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    skin  = _skin_mask(img)
+    sal   = _saliency_u8(img)
+    canny = cv2.Canny(gray, 50, 150)
+    hog_img = _hog_image(img)
+
+    F1 = gray
+    F2 = cv2.bitwise_and(skin, sal)
+    F3 = cv2.bitwise_or(canny, hog_img)
+    F4 = cv2.bitwise_xor(cv2.bitwise_and(F2, F3), skin)
+
+    return F1, F2, F3, F4
+
+
+class Method:
     @staticmethod
-    def _apply_pipeline(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
-        eroded = cv2.erode(mask, h_kernel, iterations=1)
-
-        sq_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
-        closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, sq_kernel)
-
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return closed
-
-        approx_mask = np.zeros_like(closed)
-        largest = max(contours, key=cv2.contourArea)
-        epsilon = 0.01 * cv2.arcLength(largest, True)
-        approx = cv2.approxPolyDP(largest, epsilon, True)
-        cv2.drawContours(approx_mask, [approx], -1, (255,), thickness=cv2.FILLED)
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        return cv2.bitwise_and(gray, gray, mask=approx_mask)
-
-    @staticmethod
-    def process_image(payload: MethodPayload, skin_mlp: Optional[SkinMLP] = None) -> np.ndarray:
-        img = cv2.resize(payload.image, (400, 400))
-        mask = skin_mlp.segment(img) if skin_mlp is not None else _hsv_skin_mask(img)
-        return Method._apply_pipeline(img, mask)
-
+    def process_image(payload: MethodPayload) -> np.ndarray:
+        """Returns a 64×64×3 uint8 array with channels [F2, F3, F4]."""
+        _, F2, F3, F4 = extract_features(payload.image)
+        return np.stack([F2, F3, F4], axis=-1)
 
     def learn(learning_data: list, target_model_path: str, custom_options: dict = None) -> float:
-        masks_dir = (custom_options or {}).get("skin_masks_dir", os.path.join(ROOT_DIR, "skin_masks"))
-        if masks_dir:
-            image_paths = [d.image_path for d in learning_data]
-            manual_images, manual_masks = load_manual_masks(image_paths, masks_dir)
-            if manual_images:
-                print(f"Using {len(manual_images)} manually annotated masks for SkinMLP training")
-                train_imgs_mlp, train_masks_mlp = manual_images, manual_masks
-            else:
-                print("No manual masks found, bootstrapping SkinMLP from HSV")
-                train_imgs_mlp, train_masks_mlp = [], []
-                for data in learning_data:
-                    img = cv2.resize(cv2.imread(data.image_path), (400, 400))
-                    train_imgs_mlp.append(img)
-                    train_masks_mlp.append(_hsv_skin_mask(img))
-        else:
-            train_imgs_mlp, train_masks_mlp = [], []
-            for data in learning_data:
-                img = cv2.resize(cv2.imread(data.image_path), (400, 400))
-                train_imgs_mlp.append(img)
-                train_masks_mlp.append(_hsv_skin_mask(img))
-
-        skin_mlp = SkinMLP()
-        skin_mlp.train(train_imgs_mlp, train_masks_mlp)
-        del train_imgs_mlp, train_masks_mlp
-        skin_mlp.save(os.path.join(target_model_path, 'skin_mlp.pkl'))
-
         print(f"Processing {len(learning_data)} images...")
         X, y = [], []
         for data in learning_data:
-            image = cv2.resize(cv2.imread(data.image_path), (400, 400))
-            mask = skin_mlp.segment(image)
-            processed = Method._apply_pipeline(image, mask)
-            X.append(cv2.resize(processed, (64, 64)).flatten())
+            processed = Method.process_image(MethodPayload(image=cv2.imread(data.image_path)))
+            X.append(processed.flatten())
             y.append(data.label.value - 1)
 
         svm = SVC(probability=True, kernel='linear')
@@ -95,17 +100,12 @@ class Method():
     @staticmethod
     def classify(payload: MethodPayload, custom_model_path=None,
                  custom_options: dict = None) -> Tuple[Enum, int]:
-
         model_dir = custom_model_path if custom_model_path is not None else os.path.join(ROOT_DIR, "sgrf_trained_models")
-
-        skin_mlp_path = os.path.join(model_dir, 'skin_mlp.pkl')
-        skin_mlp = SkinMLP.load(skin_mlp_path) if os.path.exists(skin_mlp_path) else None
 
         with open(os.path.join(model_dir, 'method_svm.pkl'), 'rb') as f:
             model = pickle.load(f)
 
-        processed = Method.process_image(payload=payload, skin_mlp=skin_mlp)
-        processed = cv2.resize(processed, (64, 64)).flatten().reshape(1, -1)
+        processed = Method.process_image(payload=payload).flatten().reshape(1, -1)
 
         proba = model.predict_proba(processed)[0]
         predicted_label = np.argmax(proba)

@@ -1,35 +1,28 @@
 import os
 
 import cv2
+import numpy as np
 
-from method.method import Method
+from method.method import Method, extract_features
 from method.method_payload import MethodPayload
-from method.skin_mlp import SkinMLP
-from scripts.file_coords_parser import parse_file_coords, parse_etiquette
-from scripts.loaders import  NUSIIDatasetLoader
-from time import sleep
+from scripts.loaders import NUSIIDatasetLoader
 from scripts.gestures import Gesture10
 
 path = os.path.relpath("../NUS-Hand-Posture-Dataset-II/Hand Postures")
 
 def image_processing_visual_test():
-    skin_mlp_path = os.path.join(".", "skin_mlp.pkl")
-    skin_mlp = SkinMLP.load(skin_mlp_path) if os.path.exists(skin_mlp_path) else None
-
     files = NUSIIDatasetLoader.get_learning_files(base_path=path)
 
     for image_file in files:
         image = cv2.imread(image_file[0])
+        F1, F2, F3, F4 = extract_features(image)
 
-        payload = MethodPayload(image=image)
-
-        processed_image = Method.process_image(payload, skin_mlp=skin_mlp)
-
-        cv2.imshow("Before Image", image)
-        cv2.imshow("Processed Image", processed_image)
-
-
-        cv2.waitKey(30000)
+        row = np.hstack([
+            cv2.cvtColor(cv2.resize(image, (64, 64)), cv2.COLOR_BGR2GRAY),
+            F2, F3, F4,
+        ])
+        cv2.imshow("F1(orig)  F2(skin^sal)  F3(canny|hog)  F4(hand shape)", row)
+        cv2.waitKey(0)
         cv2.destroyAllWindows()
 
 
