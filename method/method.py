@@ -17,17 +17,12 @@ _IMG_SIZE = (64, 64)
 
 
 def _skin_mask(img: np.ndarray) -> np.ndarray:
-    """
-    HSV skin-colour mask using ranges from Shaik et al. (Table 1):
-    H 0-50° (0-25 OpenCV), S 0.23-0.68 (58-173), V 0.35-1.0 (89-255).
-    Second band covers the red wrap-around (335-360° → 168-180 OpenCV).
-    Shaik et al., "Comparative study of skin colour detection and segmentation
-    in HSV and YCbCr colour space", Procedia CS 57, 2015.
-    """
+    
+    # params source: https://github.com/CHEREF-Mehdi/SkinDetection
+    # https://www.sciencedirect.com/science/article/abs/pii/S0262885620300573?via%3Dihub
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    lo1, hi1 = np.array([0,   58,  89]), np.array([25,  173, 255])
-    lo2, hi2 = np.array([168, 58,  89]), np.array([180, 173, 255])
-    return cv2.bitwise_or(cv2.inRange(hsv, lo1, hi1), cv2.inRange(hsv, lo2, hi2))
+    lo, hi = np.array([0,   15,  0]), np.array([17,  170, 255])
+    return cv2.inRange(hsv, lo, hi)
 
 
 def _saliency_u8(img: np.ndarray) -> np.ndarray:
