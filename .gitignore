@@ -1,4 +1,5 @@
 .env/
 __pycache__/
-method.pkl
+*.pkl
 *.pdf
+test_files.json

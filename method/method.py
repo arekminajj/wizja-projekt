@@ -19,8 +19,8 @@ _IMG_SIZE = (64, 64)
 def _skin_mask(img: np.ndarray) -> np.ndarray:
     """
     HSV skin-colour mask using ranges from Shaik et al. (Table 1):
-    H 0–50° (0–25 OpenCV), S 0.23–0.68 (58–173), V 0.35–1.0 (89–255).
-    Second band covers the red wrap-around (335–360° → 168–180 OpenCV).
+    H 0-50° (0-25 OpenCV), S 0.23-0.68 (58-173), V 0.35-1.0 (89-255).
+    Second band covers the red wrap-around (335-360° → 168-180 OpenCV).
     Shaik et al., "Comparative study of skin colour detection and segmentation
     in HSV and YCbCr colour space", Procedia CS 57, 2015.
     """
@@ -77,7 +77,7 @@ def extract_features(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarra
 class Method:
     @staticmethod
     def process_image(payload: MethodPayload) -> np.ndarray:
-        """Returns a 64×64×3 uint8 array with channels [F2, F3, F4]."""
+        """Returns a 64x64x3 uint8 array with channels [F2, F3, F4]."""
         _, F2, F3, F4 = extract_features(payload.image)
         return np.stack([F2, F3, F4], axis=-1)
 
