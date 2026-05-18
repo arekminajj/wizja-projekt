@@ -1,5 +1,5 @@
 .env/
 __pycache__/
 *.pkl
-*.pdf
+*.md
 test_files.json
