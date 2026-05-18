@@ -1,5 +1,4 @@
 .env/
 __pycache__/
 *.pkl
-*.md
 test_files.json

@@ -13,11 +13,8 @@ from method.method_payload import MethodPayload
 from scripts.gestures import Gesture10
 from definitions import ROOT_DIR
 
-_IMG_SIZE = (64, 64)
-
 
 def _skin_mask(img: np.ndarray) -> np.ndarray:
-    
     # params source: https://github.com/CHEREF-Mehdi/SkinDetection
     # https://www.sciencedirect.com/science/article/abs/pii/S0262885620300573?via%3Dihub
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -26,14 +23,12 @@ def _skin_mask(img: np.ndarray) -> np.ndarray:
 
 
 def _saliency_u8(img: np.ndarray) -> np.ndarray:
-    """Fine-grained static saliency map (Montabone & Soto 2010) as uint8."""
     saliency = cv2.saliency.StaticSaliencyFineGrained_create()
     _, sal_map = saliency.computeSaliency(img)
     return (sal_map * 255).astype(np.uint8)
 
 
 def _hog_image(img: np.ndarray) -> np.ndarray:
-    """HOG gradient-orientation energy image (Dalal & Triggs 2005)."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, hog_vis = hog(gray, orientations=9, pixels_per_cell=(8, 8),
                      cells_per_block=(2, 2), visualize=True)
@@ -44,16 +39,12 @@ def _hog_image(img: np.ndarray) -> np.ndarray:
 
 def extract_features(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Jafari & Basu, Sensors 2023, Section 3.
-
     F1 = original grayscale
     F2 = skin AND saliency        — saliency gated to skin regions
     F3 = Canny OR HOG             — combined edge/gradient structure
     F4 = (F2 AND F3) XOR skin     — hand shape refined by skin
-
-    All outputs are uint8 images at _IMG_SIZE.
     """
-    img = cv2.resize(img, _IMG_SIZE)
+    img = cv2.resize(img, (64, 64))
 
     gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     skin  = _skin_mask(img)
@@ -72,7 +63,6 @@ def extract_features(img: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarra
 class Method:
     @staticmethod
     def process_image(payload: MethodPayload) -> np.ndarray:
-        """Returns a 64x64x3 uint8 array with channels [F2, F3, F4]."""
         _, F2, F3, F4 = extract_features(payload.image)
         return np.stack([F2, F3, F4], axis=-1)
 
