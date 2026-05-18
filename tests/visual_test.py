@@ -19,7 +19,9 @@ def preprocessing_visual_test():
         F1, F2, F3, F4 = extract_features(image)
 
         row = np.hstack([F1, F2, F3, F4])
+        row_large = cv2.resize(row, (0, 0), fx=5, fy=5, interpolation=cv2.INTER_NEAREST)
         cv2.imshow("F1: original | F2: skin & saliency | F3: canny | hog | F4: hand shape", row)
+        cv2.imshow("F1: original | F2: skin & saliency | F3: canny | hog | F4: hand shape [powiekszony]", row_large)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
