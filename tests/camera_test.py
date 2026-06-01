@@ -105,6 +105,8 @@ def camera_test():
         if not ret:
             break
 
+        frame = cv2.flip(frame, 1)
+
         frame_count += 1
         if frame_count % 2 == 0:
             current_frame = frame
