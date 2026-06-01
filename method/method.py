@@ -67,15 +67,19 @@ class Method:
         return np.stack([F2, F3, F4], axis=-1)
 
     def learn(learning_data: list, target_model_path: str, custom_options: dict = None) -> float:
-        print(f"Processing {len(learning_data)} images...")
         X, y = [], []
-        for data in learning_data:
+        total = len(learning_data)
+        for i, data in enumerate(learning_data, 1):
+            print(f"\r{i}/{total}", end="", flush=True)
             processed = Method.process_image(MethodPayload(image=cv2.imread(data.image_path)))
             X.append(processed.flatten())
             y.append(data.label.value - 1)
+        print()
 
         svm = SVC(probability=True, kernel='linear')
+        print("Uczenie SVM...")
         svm.fit(X, y)
+        print("Gotowe!")
 
         with open(os.path.join(target_model_path, 'method_svm.pkl'), 'wb') as f:
             pickle.dump(svm, f)
