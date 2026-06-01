@@ -8,7 +8,7 @@ from method.method_learning_data import MethodLearningData
 from scripts.gestures import Gesture10
 from scripts.loaders import NUSIIDatasetLoader
 
-def export_for_yolo_classification(files_list, split_name, output_dir="../yolo/yolo_gestures_cls"):
+def export_for_yolo_classification(files_list, split_name, output_dir="./yolo/yolo_gestures_cls"):
     print(f"Eksportowanie zbioru '{split_name}' dla YOLO Classification...")
     for img_path, label in files_list:
         class_name = str(label).split('.')[-1] if hasattr(label, 'name') else str(label)

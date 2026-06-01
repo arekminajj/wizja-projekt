@@ -3,3 +3,5 @@ __pycache__/
 *.pkl
 test_files.json
 .claude/
+*.pt
+yolo_gestures_cls/
