@@ -6,7 +6,7 @@ model3 = YOLO('runs/classify/train3epochs/weights/best.pt')
 model10 = YOLO('runs/classify/train10epochs/weights/best.pt')
 model20 = YOLO('runs/classify/train20epochs/weights/best.pt')
 
-sciezka_do_zdjecia = '../gesty/Wizja gesty/Maciej/tlo_1'
+sciezka_do_zdjecia = './gesty/Maciej/tlo_1'
 
 modele_do_testu = {
     "Model (3 epoki)": model3,
