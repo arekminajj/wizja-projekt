@@ -11,7 +11,7 @@ from scripts.loaders import NUSIIDatasetLoader
 
 DATASET_PATH = os.path.relpath("../NUS-Hand-Posture-Dataset-II/Hand Postures")
 TEST_FILES_PATH = "test_files.json"
-OWN_DATASET_PATH = os.path.relpath("./gesty/Maciej/tlo_2")
+OWN_DATASET_PATH = os.path.relpath("./gesty/Maciej/tlo_3")
 
 
 def classification_test(show_images=False):
@@ -58,6 +58,7 @@ def classification_test_own_dataset(show_images=False):
 
     for image_path, label_int in files:
         image = cv2.imread(image_path)
+        image = cv2.flip(image, 1)
         payload = MethodPayload(image=image)
 
         true_label = Gesture10(label_int)
